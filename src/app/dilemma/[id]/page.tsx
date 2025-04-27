@@ -264,20 +264,41 @@ export default function DilemmaPage() {
   const handleMainAnswer = async (answer: string) => {
     if (!mainQuestions) return;
     setMainLoading(true);
-    const respostas = [...mainAnswers];
-    respostas[mainStep] = answer;
-    setMainAnswers(respostas);
-    setMainLoading(false);
-    if (mainStep < mainQuestions.length - 1) {
-      setMainStep(mainStep + 1);
-    } else {
-      setMainFinished(true);
-      if (mainInterval) clearInterval(mainInterval);
-      // Ao finalizar, salva no Firestore e limpa localStorage
-      await setDoc(doc(db, `dilemmas/${id}/main_answers/${user}`), {
-        respostas
-      }, { merge: true });
-      if (typeof window !== "undefined") localStorage.removeItem(getLocalKey());
+    try {
+      let respostas = [...mainAnswers];
+      respostas[mainStep] = answer;
+      // Se for a última pergunta, garantir que o array está completo e salvar no Firestore
+      if (mainStep === mainQuestions.length - 1) {
+        respostas[mainStep] = mainInputValue;
+        // Preencher respostas faltantes com string vazia
+        if (respostas.length < mainQuestions.length) {
+          respostas = [
+            ...respostas,
+            ...Array(mainQuestions.length - respostas.length).fill("")
+          ];
+        }
+        setMainAnswers(respostas);
+        setMainFinished(true);
+        if (mainInterval) clearInterval(mainInterval);
+        await setDoc(doc(db, `dilemmas/${id}/main_questions/${user}`), {
+          perguntas: mainQuestions,
+          respostas
+        }, { merge: true });
+        if (typeof window !== "undefined") localStorage.removeItem(getLocalKey());
+        setToast({ show: true, message: "Respostas enviadas com sucesso! Aguarde o relatório final...", type: "success" });
+      } else {
+        setMainAnswers(respostas);
+        setMainStep(mainStep + 1);
+        // Salva progresso parcial no Firestore também
+        await setDoc(doc(db, `dilemmas/${id}/main_questions/${user}`), {
+          perguntas: mainQuestions,
+          respostas
+        }, { merge: true });
+      }
+    } catch (err) {
+      setToast({ show: true, message: "Erro ao salvar respostas. Tente novamente.", type: "error" });
+    } finally {
+      setMainLoading(false);
     }
   };
 
@@ -318,6 +339,65 @@ export default function DilemmaPage() {
       setFormLoading(false);
     }
   };
+
+  // Detectar quando ambos finalizaram as 13 respostas e disparar geração do relatório final
+  useEffect(() => {
+    if (!id || !dilemma) return;
+    if (dilemma.status !== "main_questions_ready") return;
+    // Só user1 dispara para evitar duplicidade
+    if (user !== "user1") return;
+
+    // Listener sempre ativo enquanto status for main_questions_ready
+    const unsub1 = onSnapshot(doc(db, `dilemmas/${id}/main_questions/user1`), (snap1) => {
+      const data1 = snap1.data();
+      const unsub2 = onSnapshot(doc(db, `dilemmas/${id}/main_questions/user2`), async (snap2) => {
+        const data2 = snap2.data();
+        console.log("[REPORT CHECK] user1 respostas:", data1?.respostas);
+        console.log("[REPORT CHECK] user2 respostas:", data2?.respostas);
+        console.log("[REPORT CHECK] status:", dilemma.status);
+        if (
+          Array.isArray(data1?.respostas) && data1.respostas.length === 13 &&
+          Array.isArray(data2?.respostas) && data2.respostas.length === 13 &&
+          dilemma.status === "main_questions_ready"
+        ) {
+          console.log("[REPORT TRIGGER] Disparando geração do relatório final!");
+          // Atualiza status para evitar múltiplas chamadas
+          await setDoc(doc(db, "dilemmas", id), { status: "generating_report" }, { merge: true });
+          // Monta payload para n8n
+          const user1Snap = await getDoc(doc(db, `dilemmas/${id}/users/user1`));
+          const user2Snap = await getDoc(doc(db, `dilemmas/${id}/users/user2`));
+          const mainQ1 = await getDoc(doc(db, `dilemmas/${id}/main_questions/user1`));
+          const mainQ2 = await getDoc(doc(db, `dilemmas/${id}/main_questions/user2`));
+          const payload = {
+            roomId: id,
+            dilemmaTitle: dilemma.title,
+            user1: {
+              ...user1Snap.data(),
+              mainQuestions: mainQ1.data()?.perguntas,
+              mainAnswers: mainQ1.data()?.respostas
+            },
+            user2: {
+              ...user2Snap.data(),
+              mainQuestions: mainQ2.data()?.perguntas,
+              mainAnswers: mainQ2.data()?.respostas
+            }
+          };
+          try {
+            const result = await callN8nWebhook("gen-final-report", payload);
+            // Salva o relatório no Firestore
+            await setDoc(doc(db, `reports/${id}`), result);
+            await setDoc(doc(db, "dilemmas", id), { status: "finished" }, { merge: true });
+          } catch (err) {
+            // Em produção, pode logar erro ou mostrar toast
+            console.error("[REPORT ERROR] Falha ao gerar relatório:", err);
+          }
+        }
+      });
+      // Limpa o unsub2 ao desmontar ou atualizar
+      return () => unsub2();
+    });
+    return () => unsub1();
+  }, [id, dilemma, user]);
 
   if (loading) {
     return (
@@ -564,6 +644,39 @@ export default function DilemmaPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      </BeamsBackground>
+    );
+  }
+
+  // Exibir relatório final quando status for 'finished'
+  if (dilemma?.status === "finished") {
+    const [report, setReport] = useState<any>(null);
+    const [reportLoading, setReportLoading] = useState(true);
+    useEffect(() => {
+      if (!id) return;
+      setReportLoading(true);
+      getDoc(doc(db, `reports/${id}`)).then(snap => {
+        setReport(snap.exists() ? snap.data() : null);
+        setReportLoading(false);
+      });
+    }, [id]);
+    return (
+      <BeamsBackground>
+        <div className="min-h-screen flex flex-col items-center justify-center">
+          <div className="w-full max-w-2xl bg-white/90 rounded-3xl shadow-2xl p-8 flex flex-col items-center relative">
+            <h2 className="text-2xl font-extrabold text-gray-800 mb-6 text-center">Relatório Final</h2>
+            {reportLoading ? (
+              <LoadingSpinner size={48} />
+            ) : report ? (
+              <div className="w-full text-gray-800 text-base whitespace-pre-line">
+                {/* Exemplo de exibição, customize conforme estrutura do relatório */}
+                <pre className="bg-gray-100 rounded-lg p-4 overflow-x-auto text-sm">{JSON.stringify(report, null, 2)}</pre>
+              </div>
+            ) : (
+              <p className="text-red-700 font-bold">Relatório não encontrado.</p>
+            )}
           </div>
         </div>
       </BeamsBackground>
