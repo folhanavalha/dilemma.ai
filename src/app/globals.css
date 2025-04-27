@@ -1,3 +1,7 @@
+@import "@fontsource/crimson-text/400.css";
+@import "@fontsource/crimson-text/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/700.css";
 @import "tailwindcss";
 
 :root {
@@ -22,5 +26,5 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* font-family: Arial, Helvetica, sans-serif; */
 }
