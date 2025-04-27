@@ -15,6 +15,9 @@ export default function ReportPage() {
   const [error, setError] = useState("");
   const [report, setReport] = useState<any>(null);
 
+  // Estado para controlar acordeão de perguntas
+  const [openQA, setOpenQA] = useState<{ [key: string]: number | null }>({ user1: null, user2: null });
+
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -143,7 +146,7 @@ export default function ReportPage() {
             </div>
           </motion.div>
 
-          {/* Perguntas e respostas */}
+          {/* Perguntas e respostas em acordeão */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -152,14 +155,40 @@ export default function ReportPage() {
           >
             <h4 className="text-xl font-bold text-gray-800 mb-4">Perguntas & Respostas</h4>
             <div className="flex flex-col gap-6">
-              {[report.user1, report.user2].map((user: any) => (
+              {[report.user1, report.user2].map((user: any, idx: number) => (
                 <div key={user.name} className="bg-white rounded-xl shadow p-4">
                   <div className="font-bold text-blue-700 mb-2">{user.name}</div>
                   <ul className="flex flex-col gap-2">
                     {user.mainQuestions.map((q: string, i: number) => (
-                      <li key={i} className="flex flex-col sm:flex-row sm:items-center gap-1">
-                        <span className="text-gray-700 font-semibold mr-2">{i + 1}. {q}</span>
-                        <span className="text-gray-600 ml-2">{user.mainAnswers[i]}</span>
+                      <li key={i} className="border-b last:border-b-0">
+                        <button
+                          className={`w-full text-left flex items-center justify-between py-3 px-2 focus:outline-none transition-colors ${openQA[user.name] === i ? "bg-blue-50" : "bg-white"}`}
+                          aria-expanded={openQA[user.name] === i}
+                          aria-controls={`answer-${user.name}-${i}`}
+                          onClick={() => setOpenQA((prev) => ({ ...prev, [user.name]: prev[user.name] === i ? null : i }))}
+                        >
+                          <span className="font-semibold text-gray-700 flex-1">{i + 1}. {q}</span>
+                          <motion.span
+                            animate={{ rotate: openQA[user.name] === i ? 90 : 0 }}
+                            className="ml-2 text-blue-600"
+                          >
+                            ▶
+                          </motion.span>
+                        </button>
+                        <motion.div
+                          id={`answer-${user.name}-${i}`}
+                          initial={false}
+                          animate={{ height: openQA[user.name] === i ? "auto" : 0, opacity: openQA[user.name] === i ? 1 : 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="overflow-hidden"
+                        >
+                          {openQA[user.name] === i && (
+                            <div className="p-3 text-gray-800 bg-blue-50 rounded-b-xl border-t border-blue-100 animate-fade-in">
+                              <span className="block text-sm font-bold text-blue-700 mb-1">Resposta:</span>
+                              <span className="text-base">{user.mainAnswers[i]}</span>
+                            </div>
+                          )}
+                        </motion.div>
                       </li>
                     ))}
                   </ul>

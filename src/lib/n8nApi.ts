@@ -6,10 +6,5 @@ export async function callN8nWebhook<T = any>(endpoint: string, body?: any, meth
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) throw new Error("Erro ao comunicar com n8n");
-  const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    throw new Error("Resposta inválida do backend. Contate o suporte.");
-  }
+  return res.json();
 } 

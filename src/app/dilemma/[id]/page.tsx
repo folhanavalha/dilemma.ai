@@ -399,6 +399,13 @@ export default function DilemmaPage() {
     return () => unsub1();
   }, [id, dilemma, user]);
 
+  // Redirecionar automaticamente para o relatório final quando status for 'finished'
+  useEffect(() => {
+    if (dilemma?.status === "finished") {
+      router.push(`/dilemma/${id}/report`);
+    }
+  }, [dilemma?.status, id, router]);
+
   if (loading) {
     return (
       <BeamsBackground>
