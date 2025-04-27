@@ -27,7 +27,7 @@ export default function JoinDilemmaPage() {
       const dilemma = await getDilemmaById(code.trim());
       if (dilemma) {
         setToast({ show: true, message: "Entrando no dilema...", type: "success" });
-        setTimeout(() => router.push(`/dilemma/${code.trim()}`), 700);
+        setTimeout(() => router.push(`/dilemma/${code.trim()}?user=user2`), 700);
       } else {
         setToast({ show: true, message: "Código não encontrado.", type: "error" });
       }
